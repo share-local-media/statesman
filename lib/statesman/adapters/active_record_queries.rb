@@ -145,7 +145,7 @@ module Statesman
         end
 
         def db_true
-          ::ActiveRecord::Base.connection.quote(true)
+          @transition_class.connection.quote(true)
         end
       end
     end
