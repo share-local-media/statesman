@@ -79,7 +79,7 @@ module Statesman
           default_transition_attributes(to, metadata),
         )
 
-        ::ActiveRecord::Base.transaction(requires_new: true) do
+        @transition_class.transaction(requires_new: true) do
           @observer.execute(:before, from, to, transition)
 
           if mysql_gaplock_protection?
@@ -122,8 +122,8 @@ module Statesman
       end
 
       def add_after_commit_callback(from, to, transition)
-        ::ActiveRecord::Base.connection.add_transaction_record(
-          ActiveRecordAfterCommitWrap.new do
+        @transition_class.connection.add_transaction_record(
+          ActiveRecordAfterCommitWrap.new(@transition_class.connection) do
             @observer.execute(:after_commit, from, to, transition)
           end,
         )
@@ -146,7 +146,7 @@ module Statesman
         # most_recent before setting the new row to be true.
         update.order(transition_table[:most_recent].desc) if mysql_gaplock_protection?
 
-        ::ActiveRecord::Base.connection.update(update.to_sql)
+        @transition_class.connection.update(update.to_sql)
       end
 
       def most_recent_transitions(most_recent_id = nil)
@@ -244,7 +244,7 @@ module Statesman
       end
 
       def unique_indexes
-        ::ActiveRecord::Base.connection.
+        @transition_class.connection.
           indexes(transition_class.table_name).
           select do |index|
             next unless index.unique
@@ -296,7 +296,7 @@ module Statesman
         return nil if column.nil?
 
         [
-          column, ::ActiveRecord::Base.default_timezone == :utc ? Time.now.utc : Time.now
+          column, @transition_class.default_timezone == :utc ? Time.now.utc : Time.now
         ]
       end
 
@@ -305,11 +305,11 @@ module Statesman
       end
 
       def db_true
-        ::ActiveRecord::Base.connection.quote(type_cast(true))
+        @transition_class.connection.quote(type_cast(true))
       end
 
       def db_false
-        ::ActiveRecord::Base.connection.quote(type_cast(false))
+        @transition_class.connection.quote(type_cast(false))
       end
 
       def db_null
@@ -319,7 +319,7 @@ module Statesman
       # Type casting against a column is deprecated and will be removed in Rails 6.2.
       # See https://github.com/rails/arel/commit/6160bfbda1d1781c3b08a33ec4955f170e95be11
       def type_cast(value)
-        ::ActiveRecord::Base.connection.type_cast(value)
+        @transition_class.connection.type_cast(value)
       end
 
       # Check whether the `most_recent` column allows null values. If it doesn't, set old
@@ -339,9 +339,9 @@ module Statesman
     end
 
     class ActiveRecordAfterCommitWrap
-      def initialize(&block)
+      def initialize(connection, &block)
         @callback = block
-        @connection = ::ActiveRecord::Base.connection
+        @connection = connection
       end
 
       def self.trigger_transactional_callbacks?
